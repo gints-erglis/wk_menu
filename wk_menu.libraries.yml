@@ -1,0 +1,13 @@
+wk_menu:
+  version: VERSION
+  js:
+    js/wk_menu.js: {}
+  dependencies:
+    - core/modernizr
+    - core/jquery
+    - core/drupal
+    - core/drupalSettings
+    - core/backbone
+    - core/matchmedia
+    - core/matchmedia.addListener
+    - core/jquery.once

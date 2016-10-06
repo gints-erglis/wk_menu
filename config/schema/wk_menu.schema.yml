@@ -1,0 +1,7 @@
+system.menu.*.third_party.wk_menu:
+  type: mapping
+  label: 'Breakpoint'
+  mapping:
+    data-breakpoint:
+      type: text
+      label: 'Breakpoint'

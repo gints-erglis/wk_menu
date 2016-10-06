@@ -1,0 +1,5 @@
+name: Wunder menu
+type: module
+description: Extend menu functionality
+core: 8.x
+package: Wunder

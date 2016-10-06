@@ -1,0 +1,230 @@
+<?php
+
+/**
+ * @file
+ * Contains wk_menu.module..
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+use Drupal\Core\Menu\MenuLinkInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\menu_link_content\Plugin\Menu\MenuLinkContent;
+
+/**
+ * Implements hook_help().
+ */
+function wk_menu_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the wk_menu module.
+    case 'help.page.wk_menu':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('My Awesome Module') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+function wk_menu_page_attachments_alter(array &$page) {
+
+  $page['#attached']['library'][] = 'wk_menu/wk_menu';
+
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function wk_menu_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if ($form_id === 'menu_add_form' || $form_id === 'menu_edit_form') {
+    wk_menu_alter_menu_forms($form, $form_state, $form_id);
+  }
+}
+
+/**
+ * Handles the form alter for the menu_add_form and menu_edit_form forms.
+ */
+function wk_menu_alter_menu_forms(&$form, FormStateInterface $form_state, $form_id) {
+  $menu = $form_state->getFormObject()->getEntity();
+  $form['data-breakpoint'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Breakpoint'),
+    '#description' => t('This is breakpoint for short menu item title'),
+    '#default_value' => $menu->getThirdPartySetting('wk_menu', 'data-breakpoint'),
+    '#weight' => 1
+  );
+
+  if (isset($form['links'])) {
+    $form['links']['#weight'] = 2;
+  }
+
+  $form['#validate'][] = 'wk_menu_form_menu_form_validate';
+  $form['#entity_builders'][] = 'wk_menu_form_menu_add_form_builder';
+}
+
+/**
+ * Validation handler for menu_form.
+ */
+function wk_menu_form_menu_form_validate(array &$form, FormStateInterface $form_state) {
+  $breakpoint = $form_state->getValue('data-breakpoint');
+  if(!empty($breakpoint)) {
+    if(!is_numeric($breakpoint) || $breakpoint < 0) {
+      $form_state->setErrorByName('data-breakpoint', t('The typed value must be a positive number.'));
+    }
+  }
+}
+
+/**
+ * Entity builder for the menu configuration entity.
+ */
+function wk_menu_form_menu_add_form_builder($entity_type, \Drupal\system\Entity\Menu $menu, &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $value = $form_state->getValue('data-breakpoint');
+  if ($value <> '') {
+    $menu->setThirdPartySetting('wk_menu', 'data-breakpoint', $form_state->getValue('data-breakpoint'));
+    return;
+  }
+
+  $menu->unsetThirdPartySetting('wk_menu', 'data-breakpoint');
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter() for menu_link_content_form.
+ */
+function wk_menu_form_menu_link_content_form_alter(array &$form, FormStateInterface $form_state, $form_id) {
+  $menuLink = wk_menu_get_menu_link_entity_from_form_state($form_state);
+  $linkOptions = $menuLink->link->first()->options;
+  $linkAttributes = !empty($linkOptions['attributes']) ? $linkOptions['attributes'] : array();
+
+  // Add attributes to the menu item.
+  $form['options']['attributes'] = array(
+    '#type' => 'details',
+    '#title' => t('Menu item attributes'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#tree' => TRUE,
+  );
+
+  $form['options']['attributes']['class'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Classes'),
+    '#description' => t('Enter additional classes to be added to the menu item.'),
+    '#default_value' => !empty($linkAttributes['class']) ? implode(' ', $linkAttributes['class']) : '',
+  );
+
+  $form['options']['attributes']['data-title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Short title'),
+    '#description' => t('Enter short title for mobile menu item.'),
+    '#default_value' => !empty($linkAttributes['data-title']) ? $linkAttributes['data-title'] : '',
+  );
+
+  $form['actions']['submit']['#submit'][] = 'wk_menu_form_menu_link_content_form_submit';
+}
+
+/**
+ * Additional submit handler for menu_link_content_form.
+ */
+function wk_menu_form_menu_link_content_form_submit(array &$form, FormStateInterface $form_state) {
+  $values = $form_state->getValues();
+  $attributes = array();
+
+  foreach ($values['attributes'] as $attribute => $value) {
+    $value = trim($value);
+    if (!empty($value)) {
+      if ($attribute == 'class') {
+        $value = explode(' ', $value);
+      }
+      $attributes[$attribute] = $value;
+    }
+  }
+
+  $menuLinkEntity = wk_menu_get_menu_link_entity_from_form_state($form_state);
+  $options = $menuLinkEntity->link->first()->options;
+  $changed = FALSE;
+  if (empty($attributes)) {
+    if (!empty($options['attributes'])) {
+      unset($options['attributes']);
+      $changed = TRUE;
+    }
+  }
+  else {
+    $options['attributes'] = $attributes;
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $menuLinkEntity->link->first()->options = $options;
+    $menuLinkEntity->save();
+  }
+}
+
+function wk_menu_get_menu_link_entity_from_form_state(FormStateInterface $form_state) {
+  $buildInfo = $form_state->getBuildInfo();
+  $menuLinkContentForm = $buildInfo['callback_object'];
+  return $menuLinkContentForm->getEntity();
+}
+/**
+ * Implements hook_preprocess_menu().
+ *
+ * Workaround for randomly lost menu item options: load link entities and
+ * restore lost link attributes.
+ */
+function wk_menu_preprocess_menu(&$variables, $hook) {
+
+  $menu = \Drupal\system\Entity\Menu::load($variables['menu_name']);
+  $breakpoint = $menu->getThirdPartySetting('wk_menu', 'data-breakpoint');
+
+  $variables['attributes']['data-breakpoint'] = $breakpoint;
+
+  $items = $variables['items'];
+  /**
+   * @var \Drupal\Core\Menu\MenuLinkInterface $item
+   */
+  foreach ($items as $item) {
+    /**
+     * @var \Drupal\Core\Entity\EntityInterface|null $entity
+     */
+    $menuLinkEntity = wk_menu_load_link_entity_by_link($item['original_link']);
+
+    if ($menuLinkEntity instanceof \Drupal\Core\Entity\EntityInterface) {
+      if (!empty($menuLinkEntity->link->first()->options['attributes'])) {
+        foreach ($menuLinkEntity->link->first()->options['attributes'] as $attribute => $value) {
+          if ($attribute == 'class') {
+            foreach ($value as $cssClass) {
+              if (!$item['attributes']->hasClass($cssClass)) {
+                $item['attributes']->addClass($cssClass);
+              }
+            }
+          }
+          else {
+            $item['attributes']->setAttribute($attribute, $value);
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Get an entity related to a MenuLink, if there is one
+ *
+ * @param \Drupal\Core\Menu\MenuLinkInterface $menuLinkContentPlugin
+ * @return \Drupal\Core\Entity\EntityInterface|null
+ * @throws \Drupal\Core\Entity\EntityStorageException
+ */
+function wk_menu_load_link_entity_by_link(MenuLinkInterface $menuLinkContentPlugin) {
+  $entity = NULL;
+  if ($menuLinkContentPlugin instanceof MenuLinkContent) {
+    list($entity_type, $uuid) = explode(':', $menuLinkContentPlugin->getPluginId(), 2);
+    /**
+     * @var Drupal\Core\Entity\EntityRepository $repo
+     */
+    $repo = Drupal::getContainer()->get('entity.repository');
+    /**
+     * @var \Drupal\Core\Entity\EntityInterface|null $entity
+     */
+    $entity = $repo->loadEntityByUuid($entity_type, $uuid);
+  }
+  return $entity;
+}
