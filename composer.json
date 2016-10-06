@@ -1,1 +1,14 @@
-type: "drupal-module"
+{
+  "name": "wk/wk_menu",
+  "type": "drupal-module",
+  "description": "WK Advanced menu",
+  "keywords": ["WK", "Drupal"],
+  "license": "GPL-2.0",
+  "authors": [
+    {
+      "name": "Gints Erglis",
+      "role": "Developer"
+    }
+  ],
+  "require": { }
+}
